@@ -1,0 +1,30 @@
+# Copy this file to routes.toml and edit to match your To-Do lists.
+# Rules are evaluated top-to-bottom; the first match wins.
+# Both `list` and `title_match` are optional — omit either to match all values for that field.
+
+# --- Example rules ---
+
+# All tasks in the "Coding" list → example profile in your dev dir
+[[routes]]
+list = "Coding"
+profile = "example"
+cwd = "/Users/allan/dev/scratchpad"
+
+# Tasks with "PR" in the title → example profile, orchapi as working dir
+# [[routes]]
+# title_match = "(?i)\\bPR\\b"
+# profile = "example"
+# cwd = "/Users/allan/dev/orchapi"
+
+# Tasks from a specific list with a keyword filter
+# [[routes]]
+# list = "Work"
+# title_match = "(?i)deploy"
+# profile = "example"
+# cwd = "/Users/allan/dev/infra"
+
+# --- Fallback behaviour for unmatched tasks ---
+[default]
+unmatched_action = "llm_fallback"   # "llm_fallback" | "skip" | "default_profile"
+fallback_profile = "example"
+fallback_cwd = "/tmp"

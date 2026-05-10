@@ -1,0 +1,20 @@
+[poll]
+dedupe_ttl_hours = 168    # forget seen tasks after 7 days (0 = never forget)
+
+[orchapi]
+base_url = "http://127.0.0.1:7878"
+max_in_flight = 4         # skip dispatch cycle if this many sessions are running + queued
+
+[graph]
+mode = "msal"             # "msal" | "powershell" (see README for switching)
+client_id = "14d82eec-204b-4c2f-b7e8-296a70dab67e"
+tenant = "common"         # "common" works for personal MSA + most work tenants
+scopes = ["Tasks.ReadWrite", "Group.ReadWrite.All"]
+token_cache_path = "./state/token_cache.bin"
+pwsh_script = "../Get-PendingTodos.ps1"   # used only when mode = "powershell"
+
+[writeback]
+enabled = true
+stream_url = "http://127.0.0.1:7878/writeback/stream"
+poll_fallback_seconds = 60
+max_attempts = 5

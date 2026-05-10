@@ -1,0 +1,17 @@
+# Runtime state (token cache contains live OAuth tokens — never commit)
+state/seen.sqlite
+state/token_cache.bin
+
+# User-specific route config (copy from routes.toml.example)
+config/routes.toml
+
+# Local Claude Code settings (permissions, local overrides)
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store

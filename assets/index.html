@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>orchapi</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --red: #f85149; --yellow: #d29922;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.5 'Cascadia Code', 'Fira Code', monospace; display: flex; height: 100vh; overflow: hidden; }
+  #sidebar { width: 580px; min-width: 380px; border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  #header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+  #header h1 { font-size: 16px; color: var(--accent); }
+  #counts { margin-left: auto; font-size: 12px; color: var(--muted); }
+  #sections { flex: 1; overflow-y: auto; }
+  .section-title { padding: 8px 16px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; border-bottom: 1px solid var(--border); background: var(--bg); position: sticky; top: 0; z-index: 1; }
+  .session-row { padding: 10px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .1s; }
+  .session-row:hover { background: var(--panel); }
+  .session-row.active { background: var(--panel); border-left: 3px solid var(--accent); }
+  .row-top { display: flex; align-items: center; gap: 8px; }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 10px; font-weight: 600; }
+  .badge-queued    { background: #30363d; color: var(--muted); }
+  .badge-running   { background: #1f3d2e; color: var(--green); }
+  .badge-success   { background: #1f3d2e; color: var(--green); }
+  .badge-completed { background: #1f3d2e; color: var(--green); }
+  .badge-failed    { background: #3d1f1f; color: var(--red); }
+  .badge-cancelled { background: #2d2d1f; color: var(--yellow); }
+  .badge-timeout   { background: #2d2d1f; color: var(--yellow); }
+  .agent-tag { font-size: 10px; color: var(--accent); }
+  .profile-tag { font-size: 11px; color: var(--muted); }
+  .session-id-label { font-size: 11px; color: var(--muted); margin-left: auto; }
+  .row-summary { font-size: 12px; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-time { font-size: 11px; color: var(--muted); }
+  #detail { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  #detail-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: 12px; }
+  #detail-meta { flex: 1; }
+  #detail-title-row { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+  #detail-id { font-size: 12px; color: var(--muted); }
+  #cancel-btn { padding: 4px 12px; background: #3d1f1f; color: var(--red); border: 1px solid var(--red); border-radius: 4px; cursor: pointer; font-size: 12px; }
+  #cancel-btn:hover { background: var(--red); color: #fff; }
+  #spec-panel { padding: 12px 16px; border-bottom: 1px solid var(--border); max-height: 160px; overflow-y: auto; }
+  #spec-pre { font-size: 11px; color: var(--muted); white-space: pre-wrap; word-break: break-all; }
+  #log-panel { flex: 1; overflow-y: auto; padding: 12px 16px; background: #010409; }
+  #log-output { font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
+  .log-out { color: #c9d1d9; }
+  .log-err { color: #f0a050; }
+  #empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; }
+  #new-btn { padding: 4px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; color: var(--accent); font-size: 12px; }
+  #new-btn:hover { background: var(--accent); color: #000; }
+  #modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 100; align-items: center; justify-content: center; }
+  #modal-bg.open { display: flex; }
+  #modal { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 24px; width: 540px; max-width: 95vw; }
+  #modal h2 { margin-bottom: 16px; font-size: 15px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .field input, .field select, .field textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: 6px 8px; font: inherit; }
+  .field textarea { min-height: 80px; resize: vertical; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .btn { padding: 6px 14px; border-radius: 4px; cursor: pointer; font: inherit; font-size: 13px; border: 1px solid transparent; }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-secondary { background: var(--panel); border-color: var(--border); color: var(--text); }
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <div id="header">
+    <h1>orchapi</h1>
+    <button id="new-btn">+ New Session</button>
+    <span id="counts"></span>
+  </div>
+  <div id="sections">
+    <div class="section-title">Queued</div>
+    <div id="list-queued"></div>
+    <div class="section-title">Running</div>
+    <div id="list-running"></div>
+    <div class="section-title">Recent</div>
+    <div id="list-recent"></div>
+  </div>
+</div>
+<div id="detail">
+  <div id="empty">Select a session to view details</div>
+  <div id="detail-content" style="display:none;flex:1;flex-direction:column;overflow:hidden;">
+    <div id="detail-header">
+      <div id="detail-meta">
+        <div id="detail-title-row"></div>
+        <div id="detail-id"></div>
+      </div>
+      <button id="cancel-btn">Cancel</button>
+    </div>
+    <div id="spec-panel"><pre id="spec-pre"></pre></div>
+    <div id="log-panel"><pre id="log-output"></pre></div>
+  </div>
+</div>
+
+<div id="modal-bg">
+  <div id="modal">
+    <h2>New Session</h2>
+    <div class="field">
+      <label>Agent</label>
+      <select id="f-agent">
+        <option value="claude">Claude Code</option>
+        <option value="copilot">GitHub Copilot</option>
+        <option value="codex">Codex</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Profile (optional)</label>
+      <select id="f-profile"><option value="">— none —</option></select>
+    </div>
+    <div class="field">
+      <label>Action Prompt</label>
+      <textarea id="f-prompt" placeholder="What should the agent do?"></textarea>
+    </div>
+    <div class="field">
+      <label>System Prompt (optional)</label>
+      <textarea id="f-system" placeholder="Override system prompt..."></textarea>
+    </div>
+    <div class="field">
+      <label>Working Directory (optional)</label>
+      <input id="f-cwd" type="text" placeholder="/path/to/repo">
+    </div>
+    <div class="field">
+      <label>Model (optional)</label>
+      <input id="f-model" type="text" placeholder="sonnet / opus / o4-mini / …">
+    </div>
+    <div class="field">
+      <label>Tags (comma-separated, optional)</label>
+      <input id="f-tags" type="text" placeholder="todo:abc, group:weekly">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="modal-cancel-btn">Cancel</button>
+      <button class="btn btn-primary" id="modal-submit-btn">Start Session</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+let currentId = null;
+let sseSource = null;
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function statusClass(s) {
+  const map = { running: 'badge-running', completed: 'badge-completed', success: 'badge-success', failed: 'badge-failed', cancelled: 'badge-cancelled', timeout: 'badge-timeout', queued: 'badge-queued' };
+  return map[s] || 'badge-queued';
+}
+
+function relTime(iso) {
+  if (!iso) return '';
+  const diff = Math.round((Date.now() - new Date(iso)) / 1000);
+  if (diff < 60) return diff + 's ago';
+  if (diff < 3600) return Math.round(diff / 60) + 'm ago';
+  return Math.round(diff / 3600) + 'h ago';
+}
+
+function makeRow(s) {
+  const div = el('div', 'session-row' + (s.id === currentId ? ' active' : ''));
+  div.addEventListener('click', () => selectSession(s.id));
+
+  const top = el('div', 'row-top');
+  top.appendChild(el('span', 'badge ' + statusClass(s.status), s.status));
+  top.appendChild(el('span', 'agent-tag', s.agent));
+  if (s.profile) top.appendChild(el('span', 'profile-tag', s.profile));
+  top.appendChild(el('span', 'session-id-label', s.id.slice(0, 8)));
+  div.appendChild(top);
+
+  const summary = el('div', 'row-summary', s.outcome_summary || (s.spec && s.spec.action_prompt) || '');
+  div.appendChild(summary);
+  div.appendChild(el('div', 'row-time', relTime(s.queued_at)));
+
+  return div;
+}
+
+async function refresh() {
+  try {
+    const [listRes, healthRes] = await Promise.all([fetch('/sessions?limit=80'), fetch('/healthz')]);
+    const all = await listRes.json();
+    const health = await healthRes.json();
+
+    const c = health.counts || {};
+    document.getElementById('counts').textContent = 'running: ' + (c.running || 0) + '  queued: ' + (c.queued || 0);
+
+    const queued  = all.filter(s => s.status === 'queued');
+    const running = all.filter(s => s.status === 'running');
+    const recent  = all.filter(s => s.status !== 'queued' && s.status !== 'running').slice(0, 50);
+
+    ['queued', 'running', 'recent'].forEach(g => {
+      const el2 = document.getElementById('list-' + g);
+      el2.textContent = '';
+      (g === 'queued' ? queued : g === 'running' ? running : recent).forEach(s => el2.appendChild(makeRow(s)));
+    });
+  } catch (e) { /* network hiccup */ }
+}
+
+async function selectSession(id) {
+  currentId = id;
+  if (sseSource) { sseSource.close(); sseSource = null; }
+
+  document.getElementById('empty').style.display = 'none';
+  const content = document.getElementById('detail-content');
+  content.style.display = 'flex';
+  content.style.flexDirection = 'column';
+
+  document.getElementById('log-output').textContent = '';
+
+  const r = await fetch('/sessions/' + id);
+  const s = await r.json();
+
+  // Title row
+  const titleRow = document.getElementById('detail-title-row');
+  titleRow.textContent = '';
+  titleRow.appendChild(el('span', 'badge ' + statusClass(s.status), s.status));
+  const agentSpan = el('span', 'agent-tag', s.agent);
+  agentSpan.style.marginLeft = '8px';
+  titleRow.appendChild(agentSpan);
+  if (s.profile) {
+    const pSpan = el('span', 'profile-tag', s.profile);
+    pSpan.style.marginLeft = '8px';
+    titleRow.appendChild(pSpan);
+  }
+
+  document.getElementById('detail-id').textContent = id;
+  document.getElementById('spec-pre').textContent = JSON.stringify(s.spec, null, 2);
+
+  const cancelBtn = document.getElementById('cancel-btn');
+  cancelBtn.style.display = (s.status === 'running' || s.status === 'queued') ? 'block' : 'none';
+
+  const log = document.getElementById('log-output');
+
+  sseSource = new EventSource('/sessions/' + id + '/stream');
+  function appendLog(text, cls) {
+    const span = el('span', cls, text + '\n');
+    log.appendChild(span);
+    log.parentElement.scrollTop = log.parentElement.scrollHeight;
+  }
+  sseSource.addEventListener('stdout',  e => appendLog(e.data, 'log-out'));
+  sseSource.addEventListener('stderr',  e => appendLog(e.data, 'log-err'));
+  sseSource.addEventListener('outcome', () => { sseSource.close(); refresh(); });
+  sseSource.onerror = () => sseSource.close();
+
+  refresh();
+}
+
+async function cancelSession() {
+  if (!currentId) return;
+  await fetch('/sessions/' + currentId + '/cancel', { method: 'POST' });
+  refresh();
+}
+
+async function openModal() {
+  const r = await fetch('/profiles');
+  const { profiles } = await r.json();
+  const sel = document.getElementById('f-profile');
+  sel.textContent = '';
+  const none = el('option', null, '— none —');
+  none.value = '';
+  sel.appendChild(none);
+  profiles.forEach(p => {
+    const o = el('option', null, p);
+    o.value = p;
+    sel.appendChild(o);
+  });
+  document.getElementById('modal-bg').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal-bg').classList.remove('open');
+}
+
+async function submitSession() {
+  const prompt = document.getElementById('f-prompt').value.trim();
+  if (!prompt) { alert('Action prompt is required'); return; }
+
+  const overrides = { action_prompt: prompt };
+  const sys = document.getElementById('f-system').value.trim();
+  if (sys) overrides.system_prompt = sys;
+  const cwd = document.getElementById('f-cwd').value.trim();
+  if (cwd) overrides.cwd = cwd;
+  const model = document.getElementById('f-model').value.trim();
+  if (model) overrides.model = model;
+
+  const body = {
+    agent: document.getElementById('f-agent').value,
+    overrides
+  };
+  const profile = document.getElementById('f-profile').value;
+  if (profile) body.profile = profile;
+  const tagsRaw = document.getElementById('f-tags').value.trim();
+  if (tagsRaw) body.tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
+
+  const r = await fetch('/sessions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const res = await r.json();
+  closeModal();
+  if (res.id) selectSession(res.id);
+  refresh();
+}
+
+// Wire events
+document.getElementById('new-btn').addEventListener('click', openModal);
+document.getElementById('cancel-btn').addEventListener('click', cancelSession);
+document.getElementById('modal-cancel-btn').addEventListener('click', closeModal);
+document.getElementById('modal-submit-btn').addEventListener('click', submitSession);
+document.getElementById('modal-bg').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-bg')) closeModal();
+});
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

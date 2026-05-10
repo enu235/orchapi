@@ -1,0 +1,25 @@
+[server]
+bind = "127.0.0.1:7878"
+data_dir = "./.orchapi"
+
+[concurrency]
+global = 4
+claude = 2
+copilot = 2
+codex = 2
+
+[defaults]
+cwd = "/tmp"
+cancel_grace_seconds = 10
+
+[defaults.claude]
+model = "sonnet"
+permission_mode = "acceptEdits"
+allowed_tools = ["Read", "Edit", "Bash", "Grep", "Glob"]
+
+[defaults.copilot]
+allow_all_tools = true
+
+[defaults.codex]
+model = "o4-mini"
+sandbox = "workspace-write"

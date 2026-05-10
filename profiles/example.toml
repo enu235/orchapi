@@ -1,0 +1,12 @@
+agent = "claude"
+system_prompt = """
+You are a task worker. Given a task description, plan and execute the
+necessary steps in the supplied working directory.
+"""
+
+[overrides]
+allowed_tools = ["Read", "Edit", "Bash(git status)", "Bash(git diff *)"]
+max_turns = 30
+
+[overrides.env]
+TODO_SOURCE = "graph"

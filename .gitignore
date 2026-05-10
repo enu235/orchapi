@@ -1,0 +1,16 @@
+# Rust build output
+/target
+
+# Runtime data directory (SQLite DB + session logs — may contain sensitive session content)
+/.orchapi/
+
+# Local Claude Code settings (permissions, local overrides — not for sharing)
+.claude/settings.local.json
+
+# Environment files
+.env
+.env.local
+*.env
+
+# macOS
+.DS_Store
