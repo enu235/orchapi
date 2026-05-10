@@ -8,6 +8,9 @@ Thin wrapper around the orchapi REST API (`http://127.0.0.1:7878` by default).
 # List available profiles
 python3 .claude/skills/orchapi-client/client.py list-profiles
 
+# Get full profile details (including agent kind)
+python3 .claude/skills/orchapi-client/client.py get-profile default
+
 # Dispatch a session
 python3 .claude/skills/orchapi-client/client.py create-session --spec '{
   "agent": "claude",

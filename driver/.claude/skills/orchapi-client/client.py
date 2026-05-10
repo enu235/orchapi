@@ -3,6 +3,7 @@
 
 Commands:
   list-profiles
+  get-profile <name>
   create-session --spec '<json>'
   get-session <id>
   list-sessions [--status <s>] [--limit <n>]
@@ -101,6 +102,9 @@ def main() -> None:
 
     sub.add_parser("list-profiles")
 
+    gp = sub.add_parser("get-profile")
+    gp.add_argument("name")
+
     cs = sub.add_parser("create-session")
     cs.add_argument("--spec", required=True, help="JSON session spec")
 
@@ -131,6 +135,9 @@ def main() -> None:
 
     if args.cmd == "list-profiles":
         print(json.dumps(_get("/profiles"), indent=2))
+
+    elif args.cmd == "get-profile":
+        print(json.dumps(_get(f"/profiles/{args.name}"), indent=2))
 
     elif args.cmd == "create-session":
         spec = json.loads(args.spec)

@@ -48,11 +48,11 @@ curl --proto '=https' --tlsv1.2 -sSf \
 |---|---|---|
 | Rust toolchain | 1.75 | Install via [rustup.rs](https://rustup.rs) |
 | Python | 3.10 | Required for the driver |
-| `claude` CLI | any | Claude Code — install from [claude.ai/code](https://claude.ai/code) |
-| `copilot` CLI | any | Optional — GitHub Copilot CLI |
-| `codex` CLI | any | Optional — OpenAI Codex CLI |
+| `claude` CLI | any | Required to drive orchapi via Claude Code, or dispatch Claude child sessions. Install from [claude.ai/code](https://claude.ai/code) |
+| `copilot` CLI | any | Required to drive orchapi via Copilot CLI, or dispatch Copilot child sessions. See [docs/executors/copilot.md](docs/executors/copilot.md) |
+| `codex` CLI | any | Required to dispatch Codex child sessions. See [docs/executors/codex.md](docs/executors/codex.md) |
 
-You only need the agent CLIs you intend to use.
+Install only the CLIs you intend to use. The orchapi server and driver Python skills work regardless of which CLIs are present.
 
 ### Steps
 

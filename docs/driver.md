@@ -10,7 +10,8 @@ The driver itself is Claude Code — not a daemon or a compiled binary. It is a 
 
 ```
 driver/
-├── .claude/
+├── AGENTS.md                            # Entry point for Copilot CLI and Codex
+├── .claude/                             # Claude Code workspace
 │   ├── CLAUDE.md                        # Poll cycle definition (authoritative)
 │   ├── agents/
 │   │   └── todo-router.md               # LLM fallback routing subagent
@@ -19,7 +20,7 @@ driver/
 │   │   ├── driver-status.md             # /driver-status slash command
 │   │   └── writeback-loop.md            # /writeback-loop slash command
 │   ├── settings.local.json              # Driver-specific Claude Code settings
-│   └── skills/
+│   └── skills/                          # Shared Python skills (CLI-agnostic)
 │       ├── _lib/
 │       │   ├── __init__.py
 │       │   └── graph_auth.py            # Shared MSAL device-code auth helper
@@ -35,6 +36,19 @@ driver/
 │       └── todo-writeback/
 │           ├── writeback.py             # Long-running SSE writeback daemon
 │           └── SKILL.md
+├── .github/                             # GitHub Copilot CLI workspace
+│   ├── copilot-instructions.md          # Driver introduction for Copilot CLI
+│   ├── agents/
+│   │   └── todo-router.agent.md        # LLM fallback routing agent
+│   ├── prompts/
+│   │   ├── poll-todos.prompt.md        # Full poll cycle (mirrors CLAUDE.md)
+│   │   ├── driver-status.prompt.md     # Status query
+│   │   └── writeback-loop.prompt.md    # Writeback worker
+│   └── skills/
+│       ├── todo-poll/SKILL.md          # Skill reference (points at .claude/skills/)
+│       ├── todo-router/SKILL.md
+│       ├── orchapi-client/SKILL.md
+│       └── todo-writeback/SKILL.md
 ├── config/
 │   ├── driver.toml                      # Runtime configuration (copy from .example)
 │   ├── driver.toml.example              # Annotated template
@@ -45,6 +59,8 @@ driver/
 ├── requirements.txt                     # Python dependencies (msal, tomli)
 └── README.md
 ```
+
+The `.claude/skills/` directory is shared between both drivers. The Copilot driver's `.github/skills/` files contain short descriptions that point at the same Python scripts — skills are never duplicated.
 
 ---
 
@@ -88,7 +104,24 @@ The subagent is instructed to skip tasks that look like reminders, recurring cho
 
 ---
 
+## Choosing a driver CLI
+
+Both Claude Code and GitHub Copilot CLI provide a full driver experience. Pick the one you prefer — they share the same Python skills, config files, state directory, and MSAL token cache.
+
+| | Claude Code | GitHub Copilot CLI |
+|---|---|---|
+| Entry point | `.claude/CLAUDE.md` | `AGENTS.md` + `.github/prompts/` |
+| Launch | `claude --cwd driver/` | `copilot -p "/poll-todos" -s --allow-all-tools` |
+| Poll loop | `/loop 5m /poll-todos` | Re-invoke `copilot -p "/poll-todos"` on a cron/loop |
+| Status | `/driver-status` | `copilot -p "/driver-status" -s --allow-all-tools` |
+| Writeback | `/writeback-loop` | `copilot -p "/writeback-loop" -s --allow-all-tools` |
+| Skills | `.claude/skills/*.py` (authoritative) | Same scripts, discovered via `.github/skills/*/SKILL.md` |
+
+---
+
 ## How to start the driver
+
+### Claude Code
 
 The driver is a Claude Code workspace. You don't run a script — you open Claude Code in the `driver/` directory:
 
@@ -109,6 +142,41 @@ cd /path/to/orchapi/driver
 source .venv/bin/activate
 python3 .claude/skills/todo-poll/poll.py --login
 ```
+
+### GitHub Copilot CLI
+
+Authenticate once with Microsoft Graph (shared with the Claude driver):
+
+```bash
+cd /path/to/orchapi/driver
+source .venv/bin/activate
+python3 .claude/skills/todo-poll/poll.py --login
+```
+
+Then invoke Copilot prompts from the `driver/` directory:
+
+```bash
+# One-shot poll cycle
+copilot -p "/poll-todos" -s --allow-all-tools
+
+# Check driver status
+copilot -p "/driver-status" -s --allow-all-tools
+
+# Start writeback worker (blocks until Ctrl-C)
+copilot -p "/writeback-loop" -s --allow-all-tools
+```
+
+Copilot CLI has no built-in loop command. To run the poll cycle on a schedule, use a shell loop or a system cron job:
+
+```bash
+# Shell loop (every 5 minutes)
+while true; do
+  copilot -p "/poll-todos" -s --allow-all-tools
+  sleep 300
+done
+```
+
+For the Copilot CLI setup prerequisites (install, auth), see [docs/executors/copilot.md](executors/copilot.md).
 
 ---
 
@@ -133,6 +201,15 @@ Inside the Claude Code session:
 ```
 
 This starts the recurring poll loop. Every 5 minutes, Claude Code will execute a full cycle: poll Microsoft Graph, deduplicate against `seen.sqlite`, route each new task, and dispatch sessions to orchapi.
+
+**Alternative — driver (GitHub Copilot CLI):**
+```bash
+cd /path/to/orchapi/driver
+while true; do
+  copilot -p "/poll-todos" -s --allow-all-tools
+  sleep 300
+done
+```
 
 **Terminal 2 (same Claude Code session, or a second one):**
 ```

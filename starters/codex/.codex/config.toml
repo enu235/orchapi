@@ -1,0 +1,16 @@
+# Codex CLI configuration for orchapi child sessions.
+# Copy this starter into your project directory and adjust as needed.
+# Full reference: https://developers.openai.com/codex/config-reference
+
+# Default model. orchapi profiles can override this via the `model` field.
+model = "codex-mini-latest"
+
+# Sandbox controls what the agent can write.
+# "workspace-write" allows reads anywhere, writes within the workspace.
+# Change to "danger-full-access" only if the task requires writing outside the workspace.
+sandbox_mode = "workspace-write"
+
+# Approve all actions automatically (non-interactive mode required for orchapi).
+# This is equivalent to --dangerously-bypass-approvals-and-sandbox on the CLI.
+# Set to false and use a safer sandbox_mode for more cautious runs.
+auto_approve = true

@@ -53,7 +53,7 @@ cargo clippy -- -D warnings
 
 The server writes to `.orchapi/` in the current directory. This directory is gitignored. You can wipe it between test runs without consequence (sessions are lost, but the schema is re-created on next startup).
 
-### Driver (Python)
+### Driver — Claude Code
 
 ```bash
 cd driver
@@ -61,14 +61,30 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Authenticate once
+# Authenticate once (shared between all driver CLIs)
 python3 .claude/skills/todo-poll/poll.py --login
 
-# Then open the driver in Claude Code
+# Open the driver in Claude Code
 claude --cwd .
 ```
 
 Inside that Claude Code session the slash commands `/poll-todos`, `/driver-status`, and `/writeback-loop` are available.
+
+### Driver — GitHub Copilot CLI
+
+The Copilot driver shares all skills, config, and state with the Claude driver. After completing the auth step above:
+
+```bash
+cd driver
+
+# One-shot poll cycle
+copilot -p "/poll-todos" -s --allow-all-tools
+
+# Status check
+copilot -p "/driver-status" -s --allow-all-tools
+```
+
+Prompts live in `driver/.github/prompts/`. When modifying the poll cycle, update both `driver/.claude/CLAUDE.md` (canonical) and `driver/.github/prompts/poll-todos.prompt.md` (Copilot translation) to keep them in sync. Skills in `driver/.claude/skills/*.py` are shared — never duplicate them into `.github/skills/`.
 
 ### Useful environment variables
 

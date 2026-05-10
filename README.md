@@ -104,6 +104,8 @@ orchapi
 
 ### 5. Open the driver and run
 
+**With Claude Code:**
+
 ```bash
 claude --cwd driver/
 ```
@@ -115,6 +117,16 @@ Inside the Claude Code session:
 /loop 5m /poll-todos     # recurring loop every 5 minutes
 /writeback-loop          # start the writeback worker
 ```
+
+**With GitHub Copilot CLI:**
+
+```bash
+cd driver/
+copilot -p "/poll-todos" -s --allow-all-tools       # one dispatch cycle
+copilot -p "/writeback-loop" -s --allow-all-tools   # start the writeback worker
+```
+
+See [docs/driver.md](docs/driver.md) for the full driver guide, and [docs/executors/](docs/executors/) for per-CLI setup instructions.
 
 ---
 
