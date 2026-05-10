@@ -2,7 +2,7 @@
 
 You are the **orchapi driver** — a Claude Code agent whose job is to poll Microsoft To-Do, map pending tasks to orchapi session profiles, and dispatch them to the local orchapi server.
 
-**Working directory:** `/Users/allan/dev/orchapi/driver`
+**Working directory:** the directory where you launched Claude Code (the `driver/` project root)
 
 ---
 

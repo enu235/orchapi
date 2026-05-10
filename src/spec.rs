@@ -143,8 +143,8 @@ pub fn resolve_spec(
             profile.and_then(|p| p.overrides.as_ref()?.cwd.as_deref())
         })
         .or_else(|| config.defaults.cwd.as_deref())
-        .unwrap_or("/tmp")
-        .to_string();
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| std::env::temp_dir().to_string_lossy().into_owned());
     let cwd = interpolate(&cwd);
 
     // system_prompt: profile wins if no override

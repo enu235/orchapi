@@ -1,0 +1,44 @@
+# orchapi driver configuration example
+# Copy to driver.toml and edit as needed.
+
+[poll]
+# How long before a dispatched task is forgotten from state/seen.sqlite.
+# Set to 0 to never forget (tasks that reappear will be re-dispatched if their etag changed).
+dedupe_ttl_hours = 168    # 7 days
+
+[orchapi]
+base_url = "http://127.0.0.1:7878"   # URL of the local orchapi server
+max_in_flight = 4                    # skip a dispatch cycle when this many sessions are running+queued
+
+[graph]
+# Authentication mode: "msal" uses device-code auth; "powershell" delegates to Get-PendingTodos.ps1.
+# "msal" is the default and works on all platforms (macOS, Linux, Windows).
+mode = "msal"
+
+# Microsoft Entra app client_id.
+# The default below is Microsoft's well-known public client ID for MSAL device-code flows
+# with personal MSA accounts and most work tenants.
+# If your tenant blocks this ID, register your own app in Entra and paste its client_id here.
+client_id = "14d82eec-204b-4c2f-b7e8-296a70dab67e"
+
+# "common" resolves to the right authority for both personal MSA and work/school accounts.
+# Use your tenant ID (e.g. "contoso.onmicrosoft.com") to restrict to a single tenant.
+tenant = "common"
+
+# Scopes required:
+#   Tasks.ReadWrite     — read To-Do lists and mark tasks complete on writeback
+#   Group.ReadWrite.All — read/update Planner tasks (Planner is owned by M365 Groups)
+scopes = ["Tasks.ReadWrite", "Group.ReadWrite.All"]
+
+# Path to the MSAL token cache, relative to the driver root.
+# Gitignored — never commit this file.
+token_cache_path = "./state/token_cache.bin"
+
+# Path to Get-PendingTodos.ps1, used only when mode = "powershell".
+pwsh_script = "../Get-PendingTodos.ps1"
+
+[writeback]
+enabled = true                                              # set to false to disable writeback entirely
+stream_url = "http://127.0.0.1:7878/writeback/stream"      # orchapi SSE endpoint
+poll_fallback_seconds = 60                                  # how often to poll for missed writeback events
+max_attempts = 5                                            # reserved for future retry logic

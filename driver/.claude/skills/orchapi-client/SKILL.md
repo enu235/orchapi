@@ -14,7 +14,7 @@ python3 .claude/skills/orchapi-client/client.py create-session --spec '{
   "profile": "example",
   "overrides": {
     "action_prompt": "Fix the login bug\n---\nSource: Microsoft To-Do | Task ID: AAMkAGE1...",
-    "cwd": "/Users/allan/dev/myapp"
+    "cwd": "/path/to/your/project"
   }
 }'
 

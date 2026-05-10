@@ -4,24 +4,30 @@
 
 # --- Example rules ---
 
-# All tasks in the "Coding" list → example profile in your dev dir
+# All tasks in the "Coding" list → dispatch with the "default" profile
 [[routes]]
 list = "Coding"
-profile = "example"
-cwd = "/Users/allan/dev/scratchpad"
+profile = "default"
+cwd = "/path/to/your/dev/dir"   # CHANGE ME: absolute path to your project root
 
-# Tasks with "PR" in the title → example profile, orchapi as working dir
+# Pull-request review tasks (title contains "PR") → pr-reviewer profile
 # [[routes]]
 # title_match = "(?i)\\bPR\\b"
-# profile = "example"
-# cwd = "/Users/allan/dev/orchapi"
+# profile = "pr-reviewer"
+# cwd = "/path/to/your/dev/dir"
+
+# Planner-linked tasks only (cross-team project work)
+# [[routes]]
+# source = "planner"
+# profile = "default"
+# cwd = "/path/to/your/dev/dir"
 
 # Tasks from a specific list with a keyword filter
 # [[routes]]
 # list = "Work"
 # title_match = "(?i)deploy"
-# profile = "example"
-# cwd = "/Users/allan/dev/infra"
+# profile = "default"
+# cwd = "/path/to/your/infra/dir"
 
 # --- Fallback behaviour for unmatched tasks ---
 [default]

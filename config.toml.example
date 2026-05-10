@@ -1,0 +1,40 @@
+# orchapi configuration example
+# Copy to config.toml and edit as needed.
+# All fields are optional — the defaults shown here match the built-in defaults.
+
+[server]
+bind = "127.0.0.1:7878"   # address:port to listen on; use 0.0.0.0:7878 for LAN access
+data_dir = "./.orchapi"    # where orchapi stores orchapi.db and per-session logs
+
+[concurrency]
+global = 4    # max sessions running at once, across all agents (0 = use built-in default of 4)
+claude = 2    # max concurrent Claude sessions (0 = use default of 2)
+copilot = 2   # max concurrent Copilot sessions (0 = use default of 2)
+codex = 2     # max concurrent Codex sessions (0 = use default of 2)
+
+[defaults]
+# Working directory for child agent processes when a session doesn't specify one.
+# On Windows, change this to something like "C:/Users/YourName/AppData/Local/Temp".
+cwd = "/tmp"
+cancel_grace_seconds = 10   # grace period before SIGKILL on cancel
+
+# Optional: inject environment variables into every spawned child process.
+# [defaults.env]
+# MY_VAR = "my-value"
+
+[defaults.claude]
+model = "sonnet"                    # default --model flag
+permission_mode = "acceptEdits"     # default --permission-mode flag
+allowed_tools = ["Read", "Edit", "Bash", "Grep", "Glob"]
+# disallowed_tools = []
+# max_budget_usd = 1.00
+# effort = "normal"               # "low" | "normal" | "high"
+
+[defaults.copilot]
+allow_all_tools = true
+# model = "default"
+# effort = "normal"
+
+[defaults.codex]
+model = "o4-mini"
+sandbox = "workspace-write"

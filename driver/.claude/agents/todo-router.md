@@ -15,4 +15,4 @@ Rules:
 - Only use profile names from the provided list. Never invent names.
 - Match on the task's nature: coding/debugging → a claude profile, PR review → pr-reviewer profile if available, etc.
 - When uncertain, prefer skip over a bad guess — incorrectly dispatched sessions waste budget.
-- cwd should be a real directory likely relevant to the task. Use `/tmp` when unsure.
+- cwd should be a real directory likely relevant to the task. Use the system temp directory (`/tmp` on macOS/Linux, `%TEMP%` on Windows) when unsure.

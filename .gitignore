@@ -12,5 +12,8 @@
 .env.local
 *.env
 
+# Python venv (created by installer)
+driver/.venv/
+
 # macOS
 .DS_Store

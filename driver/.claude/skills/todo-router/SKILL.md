@@ -25,12 +25,12 @@ Rules are checked top-to-bottom; first match wins. Both `list` and `title_match`
 [[routes]]
 list = "Coding"
 profile = "example"
-cwd = "/Users/allan/dev/scratchpad"
+cwd = "/path/to/your/dev/dir"
 
 [[routes]]
 title_match = "(?i)\\bPR\\b"
-profile = "example"
-cwd = "/Users/allan/dev/orchapi"
+profile = "pr-reviewer"
+cwd = "/path/to/your/dev/dir"
 
 [default]
 unmatched_action = "llm_fallback"  # "llm_fallback" | "skip" | "default_profile"
