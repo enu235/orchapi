@@ -65,12 +65,12 @@ flowchart TD
 **macOS / Linux:**
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/enu235/orchapi/main/install.sh | sh
+  https://raw.githubusercontent.com/enu235/orchapi/master/install.sh | sh
 ```
 
-**Windows (PowerShell):**
+**Windows (PowerShell 7+):**
 ```powershell
-iwr -useb https://raw.githubusercontent.com/enu235/orchapi/main/install.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/enu235/orchapi/master/install.ps1 | iex
 ```
 
 See [INSTALL.md](INSTALL.md) for manual installation and all installer flags.

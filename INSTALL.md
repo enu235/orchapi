@@ -5,18 +5,23 @@
 **macOS / Linux:**
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/enu235/orchapi/main/install.sh | sh
+  https://raw.githubusercontent.com/enu235/orchapi/master/install.sh | sh
 ```
 
 **Windows (PowerShell 7+):**
 ```powershell
-iwr -useb https://raw.githubusercontent.com/enu235/orchapi/main/install.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/enu235/orchapi/master/install.ps1 | iex
 ```
 
+> **Windows prerequisites:** PowerShell 7+ (`winget install Microsoft.PowerShell`),
+> Git (`winget install --id Git.Git -e`), and Rust (`winget install Rustlang.Rustup`)
+> must be installed first. If `iwr | iex` is blocked by execution policy, run
+> instead: `pwsh -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/enu235/orchapi/master/install.ps1 | iex"`.
+
 The installer:
-1. Checks prerequisites (Rust, Python, agent CLIs).
+1. Checks prerequisites (Python, Git; Rust only if it has to build from source).
 2. Clones the repo to `~/.local/share/orchapi` (macOS/Linux) or `%LOCALAPPDATA%\orchapi` (Windows).
-3. Builds the `orchapi` binary with `cargo build --release`.
+3. Downloads the prebuilt `orchapi` binary from the [latest GitHub release](https://github.com/enu235/orchapi/releases/latest) for your platform. If no asset exists for your OS/arch, it falls back to `cargo build --release` from source.
 4. Adds the binary to your PATH.
 5. Creates a Python virtual environment in `driver/.venv` and installs dependencies.
 
@@ -28,14 +33,17 @@ The installer:
 |---|---|
 | `--prefix <dir>` | Install to a custom root directory instead of the default location |
 | `--check-only` | Verify prerequisites and print what would be done; do not install |
-| `--no-build` | Skip `cargo build --release` (useful if you have a pre-built binary) |
-| `--upgrade` | Pull latest commits and rebuild in an existing installation |
+| `--no-build` | Skip both the release-binary download and `cargo build` (useful if you've placed a binary at `target/release/orchapi` yourself) |
+| `--build` | Force a `cargo build --release` from source even when a prebuilt release asset is available. Requires the Rust toolchain. |
+| `--upgrade` | Pull latest commits and rebuild from source in an existing installation. Implies `--build`. |
 | `--uninstall` | Remove the installation directory and PATH entry |
+
+On Windows, the same flags use single-dash PowerShell syntax: `-Prefix`, `-CheckOnly`, `-NoBuild`, `-Build`, `-Upgrade`, `-Uninstall`.
 
 Example — install to `/opt/orchapi`:
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/enu235/orchapi/main/install.sh | sh -s -- --prefix /opt/orchapi
+  https://raw.githubusercontent.com/enu235/orchapi/master/install.sh | sh -s -- --prefix /opt/orchapi
 ```
 
 ---
@@ -46,8 +54,10 @@ curl --proto '=https' --tlsv1.2 -sSf \
 
 | Requirement | Minimum version | Notes |
 |---|---|---|
-| Rust toolchain | 1.75 | Install via [rustup.rs](https://rustup.rs) |
-| Python | 3.10 | Required for the driver |
+| Rust toolchain | 1.75 | Install via [rustup.rs](https://rustup.rs). On Windows use `winget install Rustlang.Rustup`. |
+| Python | 3.10 | Required for the driver. **Windows:** the Microsoft Store `python3.exe` shim is *not* a real install — install from [python.org](https://www.python.org/downloads/) or `winget install Python.Python.3.12`. |
+| Git | 2.x | Needed by the installer and by `--upgrade`. **Windows:** `winget install --id Git.Git -e`. |
+| PowerShell | 7+ | Windows only. The installer uses PowerShell-7 features. `winget install Microsoft.PowerShell`. |
 | `claude` CLI | any | Required to drive orchapi via Claude Code, or dispatch Claude child sessions. Install from [claude.ai/code](https://claude.ai/code) |
 | `copilot` CLI | any | Required to drive orchapi via Copilot CLI, or dispatch Copilot child sessions. See [docs/executors/copilot.md](docs/executors/copilot.md) |
 | `codex` CLI | any | Required to dispatch Codex child sessions. See [docs/executors/codex.md](docs/executors/codex.md) |
@@ -115,7 +125,14 @@ The default client ID (`14d82eec-204b-4c2f-b7e8-296a70dab67e`) is Microsoft's we
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/enu235/orchapi/main/install.sh | sh -s -- --upgrade
+  https://raw.githubusercontent.com/enu235/orchapi/master/install.sh | sh -s -- --upgrade
+```
+
+On Windows:
+```powershell
+iwr -useb https://raw.githubusercontent.com/enu235/orchapi/master/install.ps1 | iex
+# then re-run with -Upgrade from the install root:
+& "$env:LOCALAPPDATA\orchapi\install.ps1" -Upgrade
 ```
 
 ### Manually
@@ -143,7 +160,12 @@ pip install -r requirements.txt --upgrade
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/enu235/orchapi/main/install.sh | sh -s -- --uninstall
+  https://raw.githubusercontent.com/enu235/orchapi/master/install.sh | sh -s -- --uninstall
+```
+
+On Windows, run `install.ps1 -Uninstall` from the install root:
+```powershell
+& "$env:LOCALAPPDATA\orchapi\install.ps1" -Uninstall
 ```
 
 ### Manually
@@ -176,8 +198,11 @@ Token cache and session data live inside the repo directory, so removing the rep
 
 ### Windows
 
-- PowerShell 7+ is required for the install script.
-- The Rust toolchain requires Visual Studio Build Tools (MSVC) or the GNU toolchain. The `rustup` installer will guide you.
+- PowerShell 7+ is required for the install script. Install with `winget install Microsoft.PowerShell` and re-launch as `pwsh`.
+- Git is required for clone/upgrade. Install with `winget install --id Git.Git -e`.
+- The Rust toolchain requires Visual Studio Build Tools (MSVC) or the GNU toolchain. Install via `winget install Rustlang.Rustup`; the `rustup` installer will guide you through MSVC.
+- **Microsoft Store Python shim:** by default `python3.exe` (and `python.exe`) under `%LOCALAPPDATA%\Microsoft\WindowsApps\` are not Python — they're forwarders that prompt you to install from the Store. Install a real Python from [python.org](https://www.python.org/downloads/) or via `winget install Python.Python.3.12`, then restart your terminal. The installer detects the shim and skips past it to a real Python binary on PATH.
+- **Execution policy:** the default `RemoteSigned` policy blocks `iwr | iex` for downloaded scripts. Either set `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` (or `Bypass`), or run the one-liner via `pwsh -ExecutionPolicy Bypass -Command "iwr -useb …  | iex"`.
 - Use forward slashes or double backslashes in `config.toml` paths, e.g. `cwd = "C:/Users/You/dev"`.
 - The `cancel_grace_seconds` setting uses `CTRL_C_EVENT` on Windows instead of SIGTERM/SIGKILL.
 - WSL2 is fully supported and behaves like Linux.

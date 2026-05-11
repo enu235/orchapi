@@ -10,8 +10,9 @@
 #   --prefix DIR    Install root (default: ~/.local/share/orchapi when curl-piped,
 #                   current directory when run from a clone)
 #   --check-only    Print dependency status and exit
-#   --no-build      Skip `cargo build --release`
-#   --upgrade       git pull + rebuild (skip clone stage)
+#   --no-build      Skip both release-binary download and cargo build
+#   --build         Force cargo build --release even if a prebuilt release asset is available
+#   --upgrade       git pull + rebuild from source (skip clone stage); implies --build
 #   --uninstall     Remove launcher and venv, print manual cleanup note
 set -euo pipefail
 
@@ -29,6 +30,7 @@ warn()   { printf '\033[0;33m!\033[0m %s\n' "$1"; }
 ARG_PREFIX=""
 CHECK_ONLY=0
 NO_BUILD=0
+FORCE_BUILD=0
 UPGRADE=0
 UNINSTALL=0
 
@@ -43,6 +45,7 @@ while [ $# -gt 0 ]; do
             ;;
         --check-only)  CHECK_ONLY=1  ;;
         --no-build)    NO_BUILD=1    ;;
+        --build)       FORCE_BUILD=1 ;;
         --upgrade)     UPGRADE=1     ;;
         --uninstall)   UNINSTALL=1   ;;
         *)
@@ -81,6 +84,14 @@ fi
 # Clone stage — only when curl-piped and not --upgrade
 # ---------------------------------------------------------------------------
 if [ "$IS_PIPE_RUN" -eq 1 ] && [ "$UPGRADE" -eq 0 ] && [ "$UNINSTALL" -eq 0 ] && [ "$CHECK_ONLY" -eq 0 ]; then
+    if ! command -v git > /dev/null 2>&1; then
+        fail "git is required to clone orchapi but was not found.
+  macOS:        xcode-select --install
+  Debian/Ubuntu: sudo apt install git
+  Fedora/RHEL:   sudo dnf install git
+After installing, re-run this installer."
+    fi
+
     if [ ! -f "$PREFIX/Cargo.toml" ]; then
         stage "Cloning orchapi into $PREFIX"
         git clone https://github.com/enu235/orchapi.git "$PREFIX"
@@ -216,8 +227,19 @@ if [ "$CHECK_ONLY" -eq 1 ]; then
     exit 0
 fi
 
+# ---------------------------------------------------------------------------
+# Build strategy
+#   release-binary: download a prebuilt asset from the latest GitHub release
+#   source:         cargo build --release from this clone (needs Rust)
+#   none:           --no-build was passed
+# ---------------------------------------------------------------------------
+BUILD_STRATEGY="release-binary"
+if [ "$UPGRADE"     -eq 1 ]; then BUILD_STRATEGY="source"; fi
+if [ "$FORCE_BUILD" -eq 1 ]; then BUILD_STRATEGY="source"; fi
+if [ "$NO_BUILD"    -eq 1 ]; then BUILD_STRATEGY="none";   fi
+
 # ===========================================================================
-# STAGE 1 — Rust toolchain
+# STAGE 1 — Rust toolchain (required only for source builds)
 # ===========================================================================
 stage "Rust toolchain"
 
@@ -230,7 +252,9 @@ if command -v rustc > /dev/null 2>&1; then
     fi
 fi
 
-if [ "$RUST_OK" -eq 0 ]; then
+if [ "$RUST_OK" -eq 1 ]; then
+    ok "rustc $RUST_VER"
+elif [ "$BUILD_STRATEGY" = "source" ]; then
     if [ -n "$RUST_VER" ]; then
         warn "rustc $RUST_VER is too old (need ≥ 1.75) — installing rustup"
     else
@@ -244,9 +268,11 @@ if [ "$RUST_OK" -eq 0 ]; then
         . "$HOME/.cargo/env"
     fi
     RUST_VER="$(rustc --version | awk '{print $2}')"
+    RUST_OK=1
+    ok "rustc $RUST_VER"
+else
+    warn "rustc not found (only needed for source builds; will use the prebuilt release binary)"
 fi
-
-ok "rustc $RUST_VER"
 
 # ===========================================================================
 # STAGE 2 — Python
@@ -317,13 +343,85 @@ check_optional "pwsh"    "https://github.com/PowerShell/PowerShell/releases" \
     "only needed for PowerShell polling mode"
 
 # ===========================================================================
-# STAGE 5 — Build
+# STAGE 5 — Obtain the orchapi binary
+#
+# release-binary: download from GitHub Releases (fast, no Rust needed)
+# source:         cargo build --release (slow, requires Rust)
 # ===========================================================================
-stage "Building orchapi (release)"
+BINARY_DEST="$PREFIX/target/release/orchapi"
+BINARY_DEST_DIR="$(dirname "$BINARY_DEST")"
 
-if [ "$NO_BUILD" -eq 1 ]; then
-    warn "Skipping build (--no-build)"
-else
+# Pick the asset name based on platform
+ARCH="$(uname -m)"
+case "$OS" in
+    Darwin)
+        case "$ARCH" in
+            arm64|aarch64) ASSET_NAME="orchapi-macos-aarch64" ;;
+            *)             ASSET_NAME="orchapi-macos-x86_64"  ;;
+        esac
+        ;;
+    Linux)
+        case "$ARCH" in
+            aarch64|arm64) ASSET_NAME="orchapi-linux-aarch64" ;;
+            *)             ASSET_NAME="orchapi-linux-x86_64"  ;;
+        esac
+        ;;
+    *) ASSET_NAME="" ;;
+esac
+
+try_download_release_binary() {
+    [ -z "$ASSET_NAME" ] && return 1
+    local api="https://api.github.com/repos/enu235/orchapi/releases/latest"
+    local rel
+    if ! rel="$(curl -fsSL -H 'User-Agent: orchapi-installer' "$api" 2>/dev/null)"; then
+        warn "Could not query GitHub releases (network/curl failure)"
+        return 1
+    fi
+    # Extract browser_download_url for the matching asset
+    local url
+    url="$(printf '%s' "$rel" | awk -v name="$ASSET_NAME" '
+        $0 ~ "\"name\": *\""name"\"" { found=1 }
+        found && $0 ~ "browser_download_url" {
+            sub(/.*"browser_download_url": *"/, "")
+            sub(/".*/, "")
+            print
+            exit
+        }')"
+    if [ -z "$url" ]; then
+        warn "Latest release has no asset named '$ASSET_NAME'"
+        return 1
+    fi
+    mkdir -p "$BINARY_DEST_DIR"
+    printf '    Downloading %s ...\n' "$ASSET_NAME"
+    if ! curl -fsSL -H 'User-Agent: orchapi-installer' "$url" -o "$BINARY_DEST"; then
+        warn "Download failed"
+        return 1
+    fi
+    chmod +x "$BINARY_DEST"
+    return 0
+}
+
+if [ "$BUILD_STRATEGY" = "none" ]; then
+    stage "Skipping build (--no-build)"
+    if [ ! -f "$BINARY_DEST" ]; then
+        warn "No binary at $BINARY_DEST — \`orchapi\` will not run until you build or download one."
+    fi
+elif [ "$BUILD_STRATEGY" = "release-binary" ]; then
+    stage "Fetching orchapi release binary"
+    if try_download_release_binary; then
+        ok "Installed prebuilt binary to $BINARY_DEST"
+    elif [ "$RUST_OK" -eq 1 ]; then
+        warn "Release binary unavailable; falling back to source build"
+        BUILD_STRATEGY="source"
+    else
+        fail "Could not download a prebuilt release binary and Rust is not installed.
+  - Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+  - Or wait until a release asset for this platform is published."
+    fi
+fi
+
+if [ "$BUILD_STRATEGY" = "source" ]; then
+    stage "Building orchapi from source (cargo build --release)"
     BUILD_START="$(date +%s)"
     cargo build --release --manifest-path "$PREFIX/Cargo.toml"
     BUILD_END="$(date +%s)"

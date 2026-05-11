@@ -21,10 +21,15 @@
     Print status of all dependencies and exit.
 
 .PARAMETER NoBuild
-    Skip `cargo build --release`.
+    Skip both the release-binary download and `cargo build --release`. Useful when
+    you want to refresh configs/venv without touching the binary.
+
+.PARAMETER Build
+    Force `cargo build --release` from source even when a prebuilt release binary
+    is available. Requires the Rust toolchain.
 
 .PARAMETER Upgrade
-    Run `git pull` then rebuild. Skips clone stage.
+    Run `git pull` then rebuild from source. Skips clone stage. Implies -Build.
 
 .PARAMETER Uninstall
     Remove the launcher and venv. Prints a manual cleanup note.
@@ -34,6 +39,7 @@ param(
     [string] $Prefix    = "",
     [switch] $CheckOnly,
     [switch] $NoBuild,
+    [switch] $Build,
     [switch] $Upgrade,
     [switch] $Uninstall
 )
@@ -92,6 +98,16 @@ if ($Prefix -ne "") {
 # Clone stage — only when piped and not --upgrade / --uninstall / --check
 # ---------------------------------------------------------------------------
 if ($IsPipeRun -and -not $Upgrade -and -not $Uninstall -and -not $CheckOnly) {
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Fail @"
+git is required to clone orchapi but was not found.
+  Windows: winget install --id Git.Git -e
+  macOS:   xcode-select --install
+  Linux:   sudo apt install git   (or your distro's equivalent)
+After installing, restart your terminal and re-run this installer.
+"@
+    }
+
     if (-not (Test-Path (Join-Path $Prefix "Cargo.toml"))) {
         Write-Stage "Cloning orchapi into $Prefix"
         git clone https://github.com/enu235/orchapi.git $Prefix
@@ -101,13 +117,15 @@ if ($IsPipeRun -and -not $Upgrade -and -not $Uninstall -and -not $CheckOnly) {
         Write-Ok "Found existing clone at $Prefix"
     }
 
-    # Re-exec the freshly cloned installer
+    # Re-exec the freshly cloned installer.
+    # NOTE: PowerShell parameters use a single dash (-Prefix), not POSIX double-dash.
     $clonedScript = Join-Path $Prefix "install.ps1"
-    $extraArgs = @("--Prefix", $Prefix)
-    if ($CheckOnly) { $extraArgs += "--CheckOnly" }
-    if ($NoBuild)   { $extraArgs += "--NoBuild"   }
-    if ($Upgrade)   { $extraArgs += "--Upgrade"   }
-    if ($Uninstall) { $extraArgs += "--Uninstall" }
+    $extraArgs = @("-Prefix", $Prefix)
+    if ($CheckOnly) { $extraArgs += "-CheckOnly" }
+    if ($NoBuild)   { $extraArgs += "-NoBuild"   }
+    if ($Build)     { $extraArgs += "-Build"     }
+    if ($Upgrade)   { $extraArgs += "-Upgrade"   }
+    if ($Uninstall) { $extraArgs += "-Uninstall" }
     & $clonedScript @extraArgs
     exit $LASTEXITCODE
 }
@@ -120,12 +138,18 @@ $Prefix = (Resolve-Path $Prefix).Path
 
 # ---------------------------------------------------------------------------
 # Helper: compare version strings (returns $true if $a >= $b)
+# Handles short forms like "1.75" by padding to "1.75.0", and rejects empty
+# inputs (e.g. parsed from "Python was not found...") as 0.0.0.
 # ---------------------------------------------------------------------------
 function VersionGe {
     param([string]$a, [string]$b)
-    $av = [Version]::new(($a -replace '[^0-9.]','').TrimEnd('.').Split('.')[0..2] -join '.')
-    $bv = [Version]::new(($b -replace '[^0-9.]','').TrimEnd('.').Split('.')[0..2] -join '.')
-    return $av -ge $bv
+    function _Pad([string]$v) {
+        $clean = ($v -replace '[^0-9.]','').Trim('.')
+        $parts = @($clean.Split('.', [StringSplitOptions]::RemoveEmptyEntries))
+        while ($parts.Count -lt 3) { $parts += '0' }
+        return ($parts[0..2] -join '.')
+    }
+    return [Version]::new((_Pad $a)) -ge [Version]::new((_Pad $b))
 }
 
 # ---------------------------------------------------------------------------
@@ -219,7 +243,24 @@ if ($CheckOnly) {
 }
 
 # ===========================================================================
-# STAGE 1 — Rust toolchain
+# Build strategy
+#
+#   - release-binary: download orchapi.exe from the latest GitHub release
+#                     (no Rust toolchain required)
+#   - source        : `cargo build --release` from this clone (needs Rust)
+#   - none          : -NoBuild was passed; skip both
+#
+# -Upgrade and -Build force source; -NoBuild forces none; otherwise we try
+# release-binary first and fall back to source if the download fails AND
+# Rust is available.
+# ===========================================================================
+$BuildStrategy = "release-binary"
+if ($Upgrade) { $BuildStrategy = "source" }
+if ($Build)   { $BuildStrategy = "source" }
+if ($NoBuild) { $BuildStrategy = "none"   }
+
+# ===========================================================================
+# STAGE 1 — Rust toolchain (required only for source builds)
 # ===========================================================================
 Write-Stage "Rust toolchain"
 
@@ -227,13 +268,17 @@ $RustOk  = $false
 $RustVer = ""
 $rustCmd = Get-Command "rustc" -ErrorAction SilentlyContinue
 if ($rustCmd) {
-    $RustVer = (rustc --version | Select-String -Pattern '\d+\.\d+\.\d+').Matches[0].Value
-    if (VersionGe $RustVer "1.75") {
-        $RustOk = $true
+    $rustVerLine = rustc --version 2>&1 | Out-String
+    $rustVerMatch = [regex]::Match($rustVerLine, '\d+\.\d+\.\d+')
+    if ($rustVerMatch.Success) {
+        $RustVer = $rustVerMatch.Value
+        if (VersionGe $RustVer "1.75") { $RustOk = $true }
     }
 }
 
-if (-not $RustOk) {
+if ($RustOk) {
+    Write-Ok "rustc $RustVer"
+} elseif ($BuildStrategy -eq "source") {
     if ($RustVer) {
         Write-Warn "rustc $RustVer is too old (need >= 1.75) — please install rustup"
     } else {
@@ -241,41 +286,59 @@ if (-not $RustOk) {
     }
     Write-Host "  Run: winget install Rustlang.Rustup"
     Write-Host "  Then restart your terminal and re-run this installer."
-    Fail "Rust toolchain required"
+    Fail "Rust toolchain required for source build"
+} else {
+    Write-Warn "rustc not found (only needed for source builds; will use the prebuilt release binary)"
 }
-
-Write-Ok "rustc $RustVer"
 
 # ===========================================================================
 # STAGE 2 — Python
+#
+# On Windows, the Microsoft Store ships a "python3.exe" (and "python.exe")
+# shim at %LOCALAPPDATA%\Microsoft\WindowsApps\ that prints
+# "Python was not found; run without arguments to install from the Microsoft
+# Store..." and exits non-zero. Get-Command returns it as a normal hit, so we
+# have to probe each candidate and discard the shim before settling on one.
 # ===========================================================================
 Write-Stage "Python 3"
 
-$PythonOk  = $false
-$PythonVer = ""
-$pyCmd = Get-Command "python3" -ErrorAction SilentlyContinue
-if (-not $pyCmd) {
-    # On Windows, 'python' (not 'python3') is common
-    $pyCmd = Get-Command "python" -ErrorAction SilentlyContinue
-}
-if ($pyCmd) {
-    $pyVerRaw = & $pyCmd.Source --version 2>&1
-    $PythonVer = ($pyVerRaw -split '\s+')[1]
-    if (VersionGe $PythonVer "3.10") {
-        $PythonOk = $true
+function Resolve-RealPython {
+    param([string[]]$Names)
+    foreach ($name in $Names) {
+        $cmd = Get-Command $name -ErrorAction SilentlyContinue
+        if (-not $cmd) { continue }
+        $exe = $cmd.Source
+        # Skip the Microsoft Store App Execution Alias.
+        if ($exe -like "*\WindowsApps\*") { continue }
+        # Probe --version; the shim prints to stderr and exits non-zero.
+        $out  = & $exe --version 2>&1
+        $code = $LASTEXITCODE
+        if ($code -ne 0) { continue }
+        $line = ($out | Out-String).Trim()
+        if ($line -match 'Python\s+(\d+\.\d+(?:\.\d+)?)') {
+            return [PSCustomObject]@{ Exe = $exe; Version = $Matches[1] }
+        }
     }
+    return $null
 }
 
-if (-not $PythonOk) {
-    if ($PythonVer) {
-        Fail "Python $PythonVer is too old (need >= 3.10). Install: winget install Python.Python.3.12"
-    } else {
-        Fail "Python 3 not found. Install: winget install Python.Python.3.12"
-    }
+$PyHit = Resolve-RealPython @('python3', 'python', 'py')
+
+if (-not $PyHit) {
+    Fail @"
+Python 3.10+ not found (the Microsoft Store python3.exe/python.exe shim is not a real install).
+  Install:   winget install Python.Python.3.12
+  Or fetch:  https://www.python.org/downloads/
+After installing, restart your terminal and re-run this installer.
+"@
 }
 
-# Normalise: ensure 'python3' resolves for subsequent calls
-$Python3Exe = $pyCmd.Source
+if (-not (VersionGe $PyHit.Version "3.10")) {
+    Fail "Python $($PyHit.Version) at $($PyHit.Exe) is too old (need >= 3.10). Install: winget install Python.Python.3.12"
+}
+
+$Python3Exe = $PyHit.Exe
+$PythonVer  = $PyHit.Version
 Write-Ok "python3 $PythonVer ($Python3Exe)"
 
 # ===========================================================================
@@ -327,13 +390,76 @@ Check-Optional "codex"   "npm install -g @openai/codex"
 Check-Optional "pwsh"    "winget install Microsoft.PowerShell" "only needed for PowerShell polling mode"
 
 # ===========================================================================
-# STAGE 5 — Build
+# STAGE 5 — Obtain the orchapi binary
+#
+# release-binary path: download from GitHub Releases (fast, no Rust needed)
+# source path:         cargo build --release (slow, requires Rust)
 # ===========================================================================
-Write-Stage "Building orchapi (release)"
+$BinaryDest    = Join-Path $Prefix "target\release\orchapi.exe"
+$BinaryDestDir = Split-Path $BinaryDest
 
-if ($NoBuild) {
-    Write-Warn "Skipping build (-NoBuild)"
-} else {
+function Try-DownloadReleaseBinary {
+    param([string]$Destination)
+
+    $apiUrl   = "https://api.github.com/repos/enu235/orchapi/releases/latest"
+    $assetName = "orchapi-windows-x86_64.exe"
+
+    try {
+        $release = iwr -useb -Headers @{ "User-Agent" = "orchapi-installer" } $apiUrl
+        $rel = $release.Content | ConvertFrom-Json
+    } catch {
+        Write-Warn "Could not query GitHub releases: $($_.Exception.Message)"
+        return $false
+    }
+
+    $asset = $rel.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
+    if (-not $asset) {
+        Write-Warn "Release $($rel.tag_name) has no asset named '$assetName'"
+        return $false
+    }
+
+    if (-not (Test-Path $BinaryDestDir)) {
+        New-Item -ItemType Directory -Force -Path $BinaryDestDir | Out-Null
+    }
+
+    try {
+        Write-Host ("    Downloading {0} ({1:N0} bytes) from release {2}..." -f $asset.name, $asset.size, $rel.tag_name)
+        iwr -useb -Headers @{ "User-Agent" = "orchapi-installer" } $asset.browser_download_url -OutFile $Destination
+    } catch {
+        Write-Warn "Download failed: $($_.Exception.Message)"
+        return $false
+    }
+
+    return $true
+}
+
+if ($BuildStrategy -eq "none") {
+    Write-Stage "Skipping build (-NoBuild)"
+    if (-not (Test-Path $BinaryDest)) {
+        Write-Warn "No binary at $BinaryDest — `orchapi` will not run until you build or download one."
+    }
+}
+elseif ($BuildStrategy -eq "release-binary") {
+    Write-Stage "Fetching orchapi release binary"
+    $downloaded = Try-DownloadReleaseBinary -Destination $BinaryDest
+    if ($downloaded) {
+        Write-Ok "Installed prebuilt binary to $BinaryDest"
+    } else {
+        if ($RustOk) {
+            Write-Warn "Release binary unavailable; falling back to source build"
+            $BuildStrategy = "source"
+        } else {
+            Fail @"
+Could not download a prebuilt release binary and Rust is not installed.
+  - Install Rust:  winget install Rustlang.Rustup  (then re-run this installer)
+  - Or wait until a Windows release asset is published.
+"@
+        }
+    }
+}
+
+if ($BuildStrategy -eq "source") {
+    Write-Stage "Building orchapi from source (cargo build --release)"
     $BuildStart = Get-Date
     $manifestPath = Join-Path $Prefix "Cargo.toml"
     cargo build --release --manifest-path $manifestPath
