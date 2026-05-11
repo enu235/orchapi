@@ -118,14 +118,16 @@ After installing, restart your terminal and re-run this installer.
     }
 
     # Re-exec the freshly cloned installer.
-    # NOTE: PowerShell parameters use a single dash (-Prefix), not POSIX double-dash.
+    # NOTE: pass parameters via hashtable splat. PowerShell's array splat treats
+    # tokens as positional, so @("-Prefix", $value) collides with the script's
+    # positional [string]$Prefix instead of binding it as a named parameter.
     $clonedScript = Join-Path $Prefix "install.ps1"
-    $extraArgs = @("-Prefix", $Prefix)
-    if ($CheckOnly) { $extraArgs += "-CheckOnly" }
-    if ($NoBuild)   { $extraArgs += "-NoBuild"   }
-    if ($Build)     { $extraArgs += "-Build"     }
-    if ($Upgrade)   { $extraArgs += "-Upgrade"   }
-    if ($Uninstall) { $extraArgs += "-Uninstall" }
+    $extraArgs = @{ Prefix = $Prefix }
+    if ($CheckOnly) { $extraArgs.CheckOnly = $true }
+    if ($NoBuild)   { $extraArgs.NoBuild   = $true }
+    if ($Build)     { $extraArgs.Build     = $true }
+    if ($Upgrade)   { $extraArgs.Upgrade   = $true }
+    if ($Uninstall) { $extraArgs.Uninstall = $true }
     & $clonedScript @extraArgs
     exit $LASTEXITCODE
 }
@@ -150,6 +152,32 @@ function VersionGe {
         return ($parts[0..2] -join '.')
     }
     return [Version]::new((_Pad $a)) -ge [Version]::new((_Pad $b))
+}
+
+# ---------------------------------------------------------------------------
+# Find a real Python interpreter on PATH, skipping the Microsoft Store
+# App Execution Alias shim under %LOCALAPPDATA%\Microsoft\WindowsApps\ which
+# is present by default on Windows 11 and merely prints
+# "Python was not found; run without arguments to install from the Microsoft
+# Store..." while exiting non-zero. Returns PSCustomObject{Exe,Version} or $null.
+# Used by both Stage 2 (install) and Check-Dep (-CheckOnly).
+# ---------------------------------------------------------------------------
+function Resolve-RealPython {
+    param([string[]]$Names = @('python3','python','py'))
+    foreach ($name in $Names) {
+        $cmd = Get-Command $name -ErrorAction SilentlyContinue
+        if (-not $cmd) { continue }
+        $exe = $cmd.Source
+        if ($exe -like "*\WindowsApps\*") { continue }
+        $out  = & $exe --version 2>&1
+        $code = $LASTEXITCODE
+        if ($code -ne 0) { continue }
+        $line = ($out | Out-String).Trim()
+        if ($line -match 'Python\s+(\d+\.\d+(?:\.\d+)?)') {
+            return [PSCustomObject]@{ Exe = $exe; Version = $Matches[1] }
+        }
+    }
+    return $null
 }
 
 # ---------------------------------------------------------------------------
@@ -206,6 +234,17 @@ if ($CheckOnly) {
             [string]$Required = "",
             [string]$Note = ""
         )
+        # Python is special on Windows because of the Microsoft Store shim.
+        if ($Bin -eq "python3") {
+            $hit = Resolve-RealPython @('python3','python','py')
+            $suffix = if ($Note) { "  ($Note)" } else { "" }
+            if ($hit) {
+                Write-Host ("  " + [char]0x2713 + "  {0,-12} {1}{2}" -f $Bin, $hit.Version, $suffix) -ForegroundColor Green
+            } else {
+                Write-Host ("  " + [char]0x2717 + "  {0,-12} not found  ->  winget install Python.Python.3.12{1}" -f $Bin, $suffix) -ForegroundColor Red
+            }
+            return
+        }
         $cmd = Get-Command $Bin -ErrorAction SilentlyContinue
         if ($cmd) {
             $ver = ""
@@ -292,35 +331,9 @@ if ($RustOk) {
 }
 
 # ===========================================================================
-# STAGE 2 — Python
-#
-# On Windows, the Microsoft Store ships a "python3.exe" (and "python.exe")
-# shim at %LOCALAPPDATA%\Microsoft\WindowsApps\ that prints
-# "Python was not found; run without arguments to install from the Microsoft
-# Store..." and exits non-zero. Get-Command returns it as a normal hit, so we
-# have to probe each candidate and discard the shim before settling on one.
+# STAGE 2 — Python (Resolve-RealPython defined near the top with VersionGe)
 # ===========================================================================
 Write-Stage "Python 3"
-
-function Resolve-RealPython {
-    param([string[]]$Names)
-    foreach ($name in $Names) {
-        $cmd = Get-Command $name -ErrorAction SilentlyContinue
-        if (-not $cmd) { continue }
-        $exe = $cmd.Source
-        # Skip the Microsoft Store App Execution Alias.
-        if ($exe -like "*\WindowsApps\*") { continue }
-        # Probe --version; the shim prints to stderr and exits non-zero.
-        $out  = & $exe --version 2>&1
-        $code = $LASTEXITCODE
-        if ($code -ne 0) { continue }
-        $line = ($out | Out-String).Trim()
-        if ($line -match 'Python\s+(\d+\.\d+(?:\.\d+)?)') {
-            return [PSCustomObject]@{ Exe = $exe; Version = $Matches[1] }
-        }
-    }
-    return $null
-}
 
 $PyHit = Resolve-RealPython @('python3', 'python', 'py')
 
