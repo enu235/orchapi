@@ -1,6 +1,6 @@
 # Installing orchapi
 
-## One-line install (recommended)
+## Quick install
 
 **macOS / Linux:**
 ```bash
@@ -10,13 +10,15 @@ curl --proto '=https' --tlsv1.2 -sSf \
 
 **Windows (PowerShell 7+):**
 ```powershell
-iwr -useb https://raw.githubusercontent.com/enu235/orchapi/master/install.ps1 | iex
+$s = "$env:TEMP\orchapi-install.ps1"
+iwr https://raw.githubusercontent.com/enu235/orchapi/master/install.ps1 -OutFile $s
+# Optionally audit $s before proceeding.
+& $s
 ```
 
 > **Windows prerequisites:** PowerShell 7+ (`winget install Microsoft.PowerShell`),
 > Git (`winget install --id Git.Git -e`), and Rust (`winget install Rustlang.Rustup`)
-> must be installed first. If `iwr | iex` is blocked by execution policy, run
-> instead: `pwsh -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/enu235/orchapi/master/install.ps1 | iex"`.
+> must be installed first.
 
 The installer:
 1. Checks prerequisites (Python, Git; Rust only if it has to build from source).
@@ -36,9 +38,10 @@ The installer:
 | `--no-build` | Skip both the release-binary download and `cargo build` (useful if you've placed a binary at `target/release/orchapi` yourself) |
 | `--build` | Force a `cargo build --release` from source even when a prebuilt release asset is available. Requires the Rust toolchain. |
 | `--upgrade` | Pull latest commits and rebuild from source in an existing installation. Implies `--build`. |
-| `--uninstall` | Remove the installation directory and PATH entry |
+| `--uninstall` | Remove launcher, venv, build artifacts (`target\`), and the `.orchapi\` runtime database. Also strips the `~/.local/bin` PATH entry if empty. Preserves config files and the Microsoft Graph token cache by default. |
+| `--purge-all` | Used with `--uninstall`. Also removes config files, the MS Graph token cache, and the entire install directory. Requires interactive confirmation. Windows: `-PurgeAll`. |
 
-On Windows, the same flags use single-dash PowerShell syntax: `-Prefix`, `-CheckOnly`, `-NoBuild`, `-Build`, `-Upgrade`, `-Uninstall`.
+On Windows, the same flags use single-dash PowerShell syntax: `-Prefix`, `-CheckOnly`, `-NoBuild`, `-Build`, `-Upgrade`, `-Uninstall`, `-PurgeAll`.
 
 Example — install to `/opt/orchapi`:
 ```bash
@@ -130,8 +133,6 @@ curl --proto '=https' --tlsv1.2 -sSf \
 
 On Windows:
 ```powershell
-iwr -useb https://raw.githubusercontent.com/enu235/orchapi/master/install.ps1 | iex
-# then re-run with -Upgrade from the install root:
 & "$env:LOCALAPPDATA\orchapi\install.ps1" -Upgrade
 ```
 
@@ -163,9 +164,14 @@ curl --proto '=https' --tlsv1.2 -sSf \
   https://raw.githubusercontent.com/enu235/orchapi/master/install.sh | sh -s -- --uninstall
 ```
 
-On Windows, run `install.ps1 -Uninstall` from the install root:
+On Windows — default cleanup (preserves configs and MS Graph token):
 ```powershell
 & "$env:LOCALAPPDATA\orchapi\install.ps1" -Uninstall
+```
+
+Full removal (configs + token + repo):
+```powershell
+& "$env:LOCALAPPDATA\orchapi\install.ps1" -Uninstall -PurgeAll
 ```
 
 ### Manually
@@ -202,7 +208,7 @@ Token cache and session data live inside the repo directory, so removing the rep
 - Git is required for clone/upgrade. Install with `winget install --id Git.Git -e`.
 - The Rust toolchain requires Visual Studio Build Tools (MSVC) or the GNU toolchain. Install via `winget install Rustlang.Rustup`; the `rustup` installer will guide you through MSVC.
 - **Microsoft Store Python shim:** by default `python3.exe` (and `python.exe`) under `%LOCALAPPDATA%\Microsoft\WindowsApps\` are not Python — they're forwarders that prompt you to install from the Store. Install a real Python from [python.org](https://www.python.org/downloads/) or via `winget install Python.Python.3.12`, then restart your terminal. The installer detects the shim and skips past it to a real Python binary on PATH.
-- **Execution policy:** the default `RemoteSigned` policy blocks `iwr | iex` for downloaded scripts. Either set `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` (or `Bypass`), or run the one-liner via `pwsh -ExecutionPolicy Bypass -Command "iwr -useb …  | iex"`.
+- **Execution policy:** the default `RemoteSigned` policy may block unsigned scripts downloaded from the internet. If `& $s` is blocked, run: `pwsh -ExecutionPolicy Bypass -File "$env:TEMP\orchapi-install.ps1"` (the installer itself is never piped to `iex`).
 - Use forward slashes or double backslashes in `config.toml` paths, e.g. `cwd = "C:/Users/You/dev"`.
 - The `cancel_grace_seconds` setting uses `CTRL_C_EVENT` on Windows instead of SIGTERM/SIGKILL.
 - WSL2 is fully supported and behaves like Linux.

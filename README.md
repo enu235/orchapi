@@ -70,7 +70,10 @@ curl --proto '=https' --tlsv1.2 -sSf \
 
 **Windows (PowerShell 7+):**
 ```powershell
-iwr -useb https://raw.githubusercontent.com/enu235/orchapi/master/install.ps1 | iex
+$s = "$env:TEMP\orchapi-install.ps1"
+iwr https://raw.githubusercontent.com/enu235/orchapi/master/install.ps1 -OutFile $s
+# Optionally audit $s before proceeding.
+& $s
 ```
 
 See [INSTALL.md](INSTALL.md) for manual installation and all installer flags.

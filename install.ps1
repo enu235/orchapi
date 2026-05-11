@@ -6,10 +6,13 @@
 .DESCRIPTION
     Installs the orchapi orchestration server and its Python driver.
 
-    Supports curl-pipe install:
-        iwr -useb https://raw.githubusercontent.com/enu235/orchapi/main/install.ps1 | iex
+    Quick install from GitHub (PowerShell 7+):
+        $s = "$env:TEMP\orchapi-install.ps1"
+        iwr https://raw.githubusercontent.com/enu235/orchapi/master/install.ps1 -OutFile $s
+        & $s
+        # You may audit $s before running the third line.
 
-    And direct execution from a cloned repo:
+    Or from a cloned repo:
         .\install.ps1 [options]
 
 .PARAMETER Prefix
@@ -32,7 +35,15 @@
     Run `git pull` then rebuild from source. Skips clone stage. Implies -Build.
 
 .PARAMETER Uninstall
-    Remove the launcher and venv. Prints a manual cleanup note.
+    Remove the launcher (.cmd), Python venv, build artifacts (target\), and the
+    .orchapi\ runtime database. Also removes the ~/.local/bin PATH entry added
+    by this installer if that directory is empty after cleanup.
+    Preserves config files and the Microsoft Graph token cache by default.
+
+.PARAMETER PurgeAll
+    Used with -Uninstall. Also removes config files, the Microsoft Graph
+    token cache (driver\state\token_cache.bin), and the entire install
+    directory ($Prefix). Requires interactive confirmation.
 #>
 [CmdletBinding()]
 param(
@@ -41,7 +52,8 @@ param(
     [switch] $NoBuild,
     [switch] $Build,
     [switch] $Upgrade,
-    [switch] $Uninstall
+    [switch] $Uninstall,
+    [switch] $PurgeAll
 )
 
 $ErrorActionPreference = 'Stop'
@@ -62,11 +74,10 @@ function Fail {
 }
 
 # ---------------------------------------------------------------------------
-# Detect piped-in vs. direct execution
+# Detect whether we're running from inside a clone
 #
-# When piped via `iex`, $PSCommandPath is empty and $MyInvocation.MyCommand
-# is a ScriptBlock, not a path.  We treat "no Cargo.toml next to the script"
-# as the reliable signal.
+# A clone has a Cargo.toml sitting next to install.ps1.  Any other location
+# (temp file from iwr, arbitrary directory) means we need to clone first.
 # ---------------------------------------------------------------------------
 $ScriptDir = ""
 try {
@@ -75,10 +86,7 @@ try {
     }
 } catch {}
 
-$IsPipeRun = $true
-if ($ScriptDir -and (Test-Path (Join-Path $ScriptDir "Cargo.toml"))) {
-    $IsPipeRun = $false
-}
+$InsideClone = $ScriptDir -and (Test-Path (Join-Path $ScriptDir "Cargo.toml"))
 
 # ---------------------------------------------------------------------------
 # Resolve PREFIX (absolute path)
@@ -88,16 +96,17 @@ if ($Prefix -ne "") {
         New-Item -ItemType Directory -Force -Path $Prefix | Out-Null
     }
     $Prefix = (Resolve-Path $Prefix).Path
-} elseif ($IsPipeRun) {
-    $Prefix = Join-Path $env:LOCALAPPDATA "orchapi"
+} elseif ($InsideClone) {
+    $Prefix = (Resolve-Path $ScriptDir).Path
 } else {
-    $Prefix = (Get-Location).Path
+    $Prefix = Join-Path $env:LOCALAPPDATA "orchapi"
 }
 
 # ---------------------------------------------------------------------------
-# Clone stage — only when piped and not --upgrade / --uninstall / --check
+# Clone stage — only when not already inside a clone, and not just
+# running --upgrade / --uninstall / --check-only
 # ---------------------------------------------------------------------------
-if ($IsPipeRun -and -not $Upgrade -and -not $Uninstall -and -not $CheckOnly) {
+if (-not $InsideClone -and -not $Upgrade -and -not $Uninstall -and -not $CheckOnly) {
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
         Fail @"
 git is required to clone orchapi but was not found.
@@ -117,19 +126,9 @@ After installing, restart your terminal and re-run this installer.
         Write-Ok "Found existing clone at $Prefix"
     }
 
-    # Re-exec the freshly cloned installer.
-    # NOTE: pass parameters via hashtable splat. PowerShell's array splat treats
-    # tokens as positional, so @("-Prefix", $value) collides with the script's
-    # positional [string]$Prefix instead of binding it as a named parameter.
-    $clonedScript = Join-Path $Prefix "install.ps1"
-    $extraArgs = @{ Prefix = $Prefix }
-    if ($CheckOnly) { $extraArgs.CheckOnly = $true }
-    if ($NoBuild)   { $extraArgs.NoBuild   = $true }
-    if ($Build)     { $extraArgs.Build     = $true }
-    if ($Upgrade)   { $extraArgs.Upgrade   = $true }
-    if ($Uninstall) { $extraArgs.Uninstall = $true }
-    & $clonedScript @extraArgs
-    exit $LASTEXITCODE
+    # Execution continues in this same process — no sub-process re-execution.
+    # $Prefix now points to the clone; remaining stages use it directly.
+    $InsideClone = $true
 }
 
 # Ensure absolute path from here on
@@ -186,9 +185,19 @@ function Resolve-RealPython {
 if ($Uninstall) {
     Write-Stage "Uninstalling orchapi"
 
+    # Safety: refuse while the server is running
+    $running = Get-Process orchapi -ErrorAction SilentlyContinue
+    if ($running) {
+        Fail "orchapi.exe is running (PID $($running.Id)). Stop it first, then re-run -Uninstall."
+    }
+
     $LauncherDir = Join-Path $env:USERPROFILE ".local\bin"
     $LauncherCmd = Join-Path $LauncherDir "orchapi.cmd"
+    $VenvDir     = Join-Path $Prefix "driver\.venv"
+    $TargetDir   = Join-Path $Prefix "target"
+    $RuntimeDir  = Join-Path $Prefix ".orchapi"
 
+    # 1. Launcher
     if (Test-Path $LauncherCmd) {
         Remove-Item $LauncherCmd -Force
         Write-Ok "Removed launcher $LauncherCmd"
@@ -196,7 +205,7 @@ if ($Uninstall) {
         Write-Warn "Launcher $LauncherCmd not found (already removed?)"
     }
 
-    $VenvDir = Join-Path $Prefix "driver\.venv"
+    # 2. Python venv
     if (Test-Path $VenvDir) {
         Remove-Item $VenvDir -Recurse -Force
         Write-Ok "Removed venv $VenvDir"
@@ -204,9 +213,90 @@ if ($Uninstall) {
         Write-Warn "Venv $VenvDir not found (already removed?)"
     }
 
+    # 3. Build artifacts (target\ from cargo build, or just the downloaded .exe)
+    if (Test-Path $TargetDir) {
+        Remove-Item $TargetDir -Recurse -Force
+        Write-Ok "Removed build artifacts $TargetDir"
+    } else {
+        Write-Warn "$TargetDir not found (already removed?)"
+    }
+
+    # 4. Runtime database and session logs
+    if (Test-Path $RuntimeDir) {
+        Remove-Item $RuntimeDir -Recurse -Force
+        Write-Ok "Removed runtime data $RuntimeDir"
+    } else {
+        Write-Warn "$RuntimeDir not found (already removed or never created?)"
+    }
+
+    # 5. Remove ~/.local/bin from user PATH only if the directory is now empty
+    $launcherDirEmpty = (-not (Test-Path $LauncherDir)) -or
+                        ((Get-ChildItem $LauncherDir -Force -ErrorAction SilentlyContinue |
+                          Measure-Object).Count -eq 0)
+    $UserPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+    if ($UserPath) {
+        $segments = $UserPath -split ";" | Where-Object { $_ -ne "" }
+        if ($segments -contains $LauncherDir) {
+            if ($launcherDirEmpty) {
+                $newPath = ($segments | Where-Object { $_ -ne $LauncherDir }) -join ";"
+                [System.Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
+                Write-Ok "Removed $LauncherDir from user PATH"
+            } else {
+                Write-Warn "$LauncherDir still has other files — leaving it on PATH"
+            }
+        }
+    }
+
+    if (-not $PurgeAll) {
+        Write-Host ""
+        Write-Host "+------------------------------------------------------------------+"
+        Write-Host "|  orchapi uninstalled (default cleanup complete)                  |"
+        Write-Host "|                                                                  |"
+        Write-Host "|  Preserved (may contain your edits / auth token):               |"
+        Write-Host "|    config.toml, driver\config\*.toml                            |"
+        Write-Host "|    driver\state\token_cache.bin                                 |"
+        Write-Host "|    $($Prefix.PadRight(60))|"
+        Write-Host "|                                                                  |"
+        Write-Host "|  To fully remove everything (configs + token + repo):            |"
+        Write-Host "|    .\install.ps1 -Uninstall -PurgeAll                           |"
+        Write-Host "+------------------------------------------------------------------+"
+        Write-Host "  Restart your terminal to apply the PATH change."
+        exit 0
+    }
+
+    # -PurgeAll: remove configs, token cache, and the entire install directory
     Write-Host ""
-    Write-Host "Binary and database at $Prefix can be removed manually with:"
-    Write-Host "  Remove-Item -Recurse -Force `"$Prefix`""
+    Write-Warn "PurgeAll will permanently delete:"
+    Write-Warn "  config.toml and driver\config\*.toml  (your edits will be lost)"
+    Write-Warn "  driver\state\token_cache.bin  (Microsoft Graph re-auth required on next install)"
+    Write-Warn "  the entire directory: $Prefix"
+    Write-Host ""
+    $answer = Read-Host "Type 'yes' to continue"
+    if ($answer.Trim() -ne "yes") {
+        Write-Warn "Aborted — nothing extra removed."
+        exit 0
+    }
+
+    # Step out of $Prefix before removing it (Windows "directory in use" guard)
+    try {
+        $cwd = (Get-Location).Path
+        if ($cwd.StartsWith($Prefix, [StringComparison]::OrdinalIgnoreCase)) {
+            Set-Location $env:USERPROFILE
+        }
+    } catch {}
+
+    if (Test-Path $Prefix) {
+        Remove-Item $Prefix -Recurse -Force
+        Write-Ok "Removed install directory $Prefix"
+    } else {
+        Write-Warn "$Prefix not found (already removed?)"
+    }
+
+    Write-Host ""
+    Write-Host "+------------------------------------------------------------------+"
+    Write-Host "|  orchapi fully removed (-PurgeAll)                               |"
+    Write-Host "|  Restart your terminal to apply the PATH change.                 |"
+    Write-Host "+------------------------------------------------------------------+"
     exit 0
 }
 
@@ -437,7 +527,7 @@ function Try-DownloadReleaseBinary {
 
     try {
         Write-Host ("    Downloading {0} ({1:N0} bytes) from release {2}..." -f $asset.name, $asset.size, $rel.tag_name)
-        iwr -useb -Headers @{ "User-Agent" = "orchapi-installer" } $asset.browser_download_url -OutFile $Destination
+        iwr -useb $asset.browser_download_url -OutFile $Destination
     } catch {
         Write-Warn "Download failed: $($_.Exception.Message)"
         return $false
