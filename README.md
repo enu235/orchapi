@@ -1,6 +1,6 @@
 # orchapi
 
-[![Build](https://img.shields.io/github/actions/workflow/status/enu235/orchapi/ci.yml?branch=main&label=build)](https://github.com/enu235/orchapi/actions)
+[![Release](https://img.shields.io/github/actions/workflow/status/enu235/orchapi/release.yml?branch=master&label=release)](https://github.com/enu235/orchapi/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **orchapi** is a local Rust server that turns your Microsoft To-Do and Planner tasks into fully autonomous AI coding sessions. It dispatches tasks to Claude Code, GitHub Copilot CLI, or OpenAI Codex, manages concurrency, streams live output, and writes results back to Microsoft Graph when each session finishes — all without leaving your machine.

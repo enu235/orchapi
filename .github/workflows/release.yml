@@ -1,0 +1,100 @@
+name: Release
+
+# Tag a commit `v*` and push the tag to fire this workflow. The workflow
+# builds orchapi for Linux, Windows, and macOS (both Intel and Apple Silicon)
+# and attaches the binaries to the matching GitHub Release. `workflow_dispatch`
+# is also enabled so the workflow can be exercised manually against an
+# already-tagged commit without re-tagging.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to attach binaries to (e.g. v0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.target.name }})
+    runs-on: ${{ matrix.target.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: linux-x86_64
+            runner: ubuntu-latest
+            asset: orchapi-linux-x86_64
+            ext: ""
+          - name: windows-x86_64
+            runner: windows-latest
+            asset: orchapi-windows-x86_64.exe
+            ext: ".exe"
+          - name: macos-aarch64
+            runner: macos-14
+            asset: orchapi-macos-aarch64
+            ext: ""
+          - name: macos-x86_64
+            runner: macos-13
+            asset: orchapi-macos-x86_64
+            ext: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build (release)
+        shell: bash
+        run: cargo build --release --locked
+
+      - name: Stage asset
+        shell: bash
+        run: |
+          cp "target/release/orchapi${{ matrix.target.ext }}" "${{ matrix.target.asset }}"
+          ls -la "${{ matrix.target.asset }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target.asset }}
+          path: ${{ matrix.target.asset }}
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Attach binaries to release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Inspect dist
+        run: ls -la dist
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: ${{ inputs.tag || github.ref_name }}
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
